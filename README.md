@@ -10,13 +10,13 @@ A multi-agent system where specialized AI agents — CEO, Planner, Developer, QA
 
 You give AgentOS a goal. A coordinated team of AI agents takes it from there:
 
-1. **CEO Agent** — interprets the goal, defines success criteria, delegates work
-2. **Planner Agent** — decomposes the goal into a dependency graph of subtasks
-3. **Developer Agent** — writes working code, iterates on feedback
-4. **QA Agent** — reviews every output, flags failures, requests revisions
-5. **Writer Agent** — generates documentation, reports, and READMEs
+1. **CEO Agent** — interprets the goal and produces a structured execution plan
+2. **Planner Agent** — decomposes the CEO plan into an ordered list of concrete steps
+3. **Developer Agent** — writes working code, iterates on QA feedback
+4. **QA Agent** — runs the code in a real headless browser, scores it, requests revisions
+5. **Writer Agent** — generates documentation and a final deliverable report
 
-Every step is streamed live to the UI via WebSockets.
+Every step is streamed live to the UI via WebSockets. Six preset pipelines are included out of the box: Software Development, Research & Intelligence, Investment Analysis, Legal Review, Content Marketing, and Academic Literature Review. Custom pipelines can be built and saved in the UI.
 
 ---
 
@@ -35,13 +35,11 @@ FastAPI Backend (Python 3.12)
 └─────────────────────────────────────────┘
     │
     ├── Claude Opus 4.7 / Sonnet 4.6  (AI)
-    ├── PostgreSQL on Neon           (persistence)
-    ├── Redis on Upstash             (short-term memory)
-    ├── Pinecone                     (vector memory)
-    └── Cloudflare R2                (generated artefacts)
+    ├── PostgreSQL on Neon             (persistence)
+    ├── Redis on Upstash               (short-term memory)
+    ├── Pinecone                       (vector memory)
+    └── Cloudflare R2                  (generated artefacts)
 ```
-
-Full architecture breakdown at [/architecture](https://agentos.vercel.app/architecture).
 
 ---
 
@@ -49,7 +47,7 @@ Full architecture breakdown at [/architecture](https://agentos.vercel.app/archit
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | Next.js 15 (App Router), Tailwind CSS v4, Vercel AI SDK |
+| Frontend | Next.js 15 (App Router), Tailwind CSS v4 |
 | Backend | FastAPI, Python 3.12, Uvicorn |
 | Orchestration | LangGraph |
 | AI | Claude Opus 4.7 (reasoning), Claude Sonnet 4.6 (fast tasks) |
@@ -63,11 +61,11 @@ Full architecture breakdown at [/architecture](https://agentos.vercel.app/archit
 
 ## Local Development
 
-**Prerequisites:** Node 20+, Python 3.12, Docker
+**Prerequisites:** Node 20+, Python 3.12
 
 ```bash
 # Clone
-git clone https://github.com/kashi211/AgentOS.git
+git clone https://github.com/your-org/AgentOS.git
 cd AgentOS
 
 # Frontend
@@ -82,44 +80,41 @@ cp .env.example .env   # fill in API keys
 uvicorn main:app --reload --port 8000
 ```
 
-**Required env vars (`.env`):**
+**Required env vars (`backend/.env`):**
 
 ```env
 ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
 DATABASE_URL=postgresql://...
-UPSTASH_REDIS_URL=...
-PINECONE_API_KEY=...
+DATABASE_URL_UNPOOLED=postgresql://...
 ```
 
----
+**Optional env vars:**
 
-## Project Status
-
-Currently in **Phase 1** — frontend scaffold complete, backend in progress.
-Full roadmap at [/plan](https://agentos.vercel.app/plan).
-
-| Phase | Status |
-|-------|--------|
-| 1 · Foundation | 🔄 In progress |
-| 2 · Agent Engine | ⬜ Todo |
-| 3 · Task Orchestration | ⬜ Todo |
-| 4 · Real-Time UI | ⬜ Todo |
-| 5 · Polish & Deploy | ⬜ Todo |
-| 6 · Stretch Goals | 🔮 Post-launch |
+```env
+UPSTASH_REDIS_URL=https://...     # short-term agent memory
+UPSTASH_REDIS_TOKEN=...
+PINECONE_API_KEY=...              # long-term vector memory
+PINECONE_INDEX=agentos-memory
+R2_ACCOUNT_ID=...                 # file storage for generated artefacts
+R2_ACCESS_KEY_ID=...
+R2_SECRET_ACCESS_KEY=...
+R2_BUCKET_NAME=agentos-artefacts
+SERPER_API_KEY=...                # web search (serper.dev)
+BRAINTRUST_API_KEY=...            # LLM eval tracking
+JWT_SECRET=...                    # auth (change in production)
+DEV_MODE=true                     # collapses all models to Haiku to save cost
+```
 
 ---
 
 ## Design Decisions
 
-**LangGraph over a custom orchestrator** — models agent workflows as directed graphs with typed state, making complex branching explicit and checkpointable for durable execution.
+**LangGraph over a custom orchestrator** — models agent workflows as directed graphs with typed state, making complex branching (QA revision loops, conditional routing) explicit and easy to reason about.
 
-**Claude Opus 4.7 + Sonnet 4.6** — Opus 4.7 for deep reasoning and code; Sonnet 4.6 for fast, lighter sub-tasks. Swapping between them is a config change.
+**Claude Opus 4.7 + Sonnet 4.6** — Opus 4.7 for deep reasoning and code generation; Sonnet 4.6 for fast, lighter sub-tasks like QA scoring and content editing. Swapping models is a one-line config change.
 
-**PostgreSQL (Neon) over SQLite** — serverless Postgres with branching, zero cold-start, and native pgvector support for future embedding queries.
+**QA runs real code** — the QA agent spins up a headless Chromium browser (Playwright), loads generated HTML/JS files from R2, and runs scripted test steps. It doesn't just read the source; it actually executes the app.
 
-**WebSockets over SSE** — agent runs span minutes with many sub-events. WebSockets let the UI send interrupts and human feedback mid-run, not just receive.
+**PostgreSQL (Neon) over SQLite** — serverless Postgres with zero cold-start. Stores tasks, subtasks, messages, metrics, and custom presets. Redis and Pinecone degrade gracefully if not configured.
 
----
-
-Built by [Kashish Panwar](https://github.com/kashi211)
+**WebSockets over SSE** — agent runs span minutes with many sub-events. A persistent WebSocket connection keeps the UI updated without polling.
